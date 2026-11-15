@@ -30,7 +30,7 @@ explains them and adds detail.
 | Remote content in the window | A link or redirect loads a web page that can reach IPC | No off-app navigation, popups, webviews or permissions; external links open in the browser |
 | Agent overreach | An AI agent connected over MCP runs `network.restart` or `eero.remove` on its own | `disruptive` and `destructive` tools carry `destructiveHint`, need `confirm: true`, and MCP clients ask the user; `--read-only` MCP mode; audit log in App & account |
 | Credential sent to the wrong host | A crafted `url` in an API response points elsewhere | Client refuses any origin but `https://api-user.e2ro.com` with a known version prefix; no redirects. The only exception is the fake server origin, injected by tests and by dev builds (`pnpm dev:fake`); release builds have no way to change it |
-| Tampered update | A fake release replaces the app | Signed and notarized macOS builds, with electron-updater verifying the signature; sha512 update metadata and published checksums everywhere. Windows builds are unsigned for now (signature checks start when signing is added before a wider release); Linux packages are checked by checksum (see [build-and-release.md](../platform/build-and-release.md)) |
+| Tampered update | A fake release replaces the app | Releases are built only in GitHub Actions and published as GitHub Releases of `pkkid/mesh-ui`; electron-updater downloads over HTTPS from there and checks each download against the sha512 in `latest*.yml`, and `SHA256SUMS.txt` lets users check a manual download. macOS and Windows builds are unsigned for now (macOS carries only an ad-hoc signature), so nothing yet proves who built a release; Developer ID signing with notarization, and Authenticode, are the later plan (see [build-and-release.md](../platform/build-and-release.md#signing)). Linux packages are checked by checksum |
 | Accidental damage | User clicks Restart network meaning Restart eero | Inline confirm or dialog for every disruptive and destructive action, naming what will happen |
 | Agents touching the real network during development | A test or script calls eero with the maintainer's session | Sandbox rules in [testing.md](../testing.md): demo backend, fake server, throwaway user data dirs |
 
@@ -51,6 +51,15 @@ The host supplies a `SecretStore`; core never imports Electron.
   Keychain on macOS, DPAPI on Windows, libsecret (GNOME Keyring) or KWallet on
   Linux. The ciphertext is written to `session.json` as
   `{ "v": 2, "token": "<base64>" }`.
+- **Async API.** The store uses `isAsyncEncryptionAvailable`,
+  `encryptStringAsync` and `decryptStringAsync`; the sync calls are
+  deprecated in Electron 45 and are not used. Sessions saved by older builds
+  with the sync API still decrypt with `decryptStringAsync`, so an upgrade
+  keeps the user signed in. When it reports `shouldReEncrypt` (the key was
+  rotated or a stronger one is available) the session is written again with
+  the new key; if that write fails the old file is kept and the next load
+  tries again. An availability check that fails or rejects counts as no
+  keychain.
 - **Real keychain only.** On Linux, `safeStorage.getSelectedStorageBackend()`
   of `basic_text` (a key hardcoded into Chromium) or `unknown` counts as no
   keychain. With no keychain the session stays in memory for this launch and
@@ -155,8 +164,13 @@ dir (`src/core/audit.ts`, written by `engine.execute`), one JSON line each:
   lines.
 - UI-originated commands are not logged, and neither are demo or fake runs
   (they change nothing real and may run with the real config dir).
-- App & account shows the last week ("38 commands from the CLI and
-  agents"), flagging any that needed confirm (M6).
+- App & account reads it through `app.audit.list` (`readAudit`): the last
+  7 local days ("38 commands from the CLI and agents"), a count per day,
+  how many were refused with `needs_confirm`, this week's newest entries
+  (time, surface, id, effect, ok, code) and the newest MCP command at any
+  age (`mcpLastAt`). It reads only the newest 1,000 lines, skips malformed
+  ones, and never returns params, so nothing from the file but those fields
+  reaches the window.
 
 ## Logging
 
@@ -171,8 +185,10 @@ dir (`src/core/audit.ts`, written by `engine.execute`), one JSON line each:
 ## Dependencies and build
 
 - pnpm lockfile committed; CI installs with `--frozen-lockfile`.
-- Releases are built only in GitHub Actions from a tag, signed there with
-  secrets that never reach pull request builds from forks.
+- Releases are built only in GitHub Actions from a tag (or a manual dry
+  run), as draft releases the maintainer publishes. They are unsigned for
+  now and use no secrets; when signing is added, its secrets live in a
+  `release` environment that pull request builds from forks never reach.
 - Electron is kept on a supported major; security releases ship as patch
   releases.
 

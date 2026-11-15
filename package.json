@@ -1,11 +1,16 @@
 {
   "name": "mesh-ui",
   "productName": "Mesh UI",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "A desktop client for eero mesh networks",
   "private": true,
   "main": "out/main/index.js",
   "license": "MIT",
+  "author": {
+    "name": "Michael Shepanski",
+    "email": "435619+pkkid@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/pkkid/mesh-ui",
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
     "dev": "electron-vite dev",
@@ -42,6 +47,7 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "class-variance-authority": "^0.7.1",
+    "electron-updater": "^6.8.11",
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

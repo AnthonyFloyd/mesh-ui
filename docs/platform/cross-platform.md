@@ -43,6 +43,9 @@ Never hard-code a separator; use `path.join`.
 | Linux | `gnome_libsecret`, `kwallet`, `kwallet5`, `kwallet6` | Yes | Needs a Secret Service or KWallet on the session D-Bus |
 | Linux | `basic_text`, `unknown` | **No** | Session stays in memory; sign in each launch |
 
+- Availability comes from `safeStorage.isAsyncEncryptionAvailable()` (the
+  async API, see [security.md](../architecture/security.md#session-storage));
+  the Linux backend name still comes from `getSelectedStorageBackend()`.
 - Chromium picks the Linux backend from the desktop environment. Users can
   force one with `--password-store=gnome-libsecret` or `kwallet6`.
 - Test the no-keychain path with `--password-store=basic`; App & account must
@@ -111,13 +114,15 @@ The user can turn them off in App & account (`app.settings.set`).
 | Launcher | `/usr/local/bin/mesh-ui` symlink, installed from App & account | `mesh-ui.cmd` in `<install dir>\bin`, added to user `PATH` by NSIS | `/usr/bin/mesh-ui` (deb, rpm); `~/.local/bin/mesh-ui` from App & account (AppImage) |
 | How it starts | App binary with `--cli` | Node-mode relay spawns the app with `--cli` (console output) | App binary with `--cli` |
 | Dock or taskbar icon | Hidden (`app.dock.hide()`) | None (no window) | None |
-| No display | n/a | n/a | Launcher adds `--ozone-platform=headless` |
+| No display | n/a | n/a | Launcher always drops `DISPLAY` and `WAYLAND_DISPLAY` and adds `--ozone-platform=headless --disable-gpu` |
 
 Full detail in [build-and-release.md](build-and-release.md#cli-launcher).
 
 ## Line endings and shells
 
 - `.gitattributes` keeps `* text=auto eol=lf`; scripts and fixtures use LF.
+  The exception is Windows batch files (`*.cmd`, `*.bat`), checked out with
+  CRLF so `cmd.exe` runs them reliably. Images are marked binary.
 - Docs give CLI examples for POSIX shells. On Windows PowerShell, JSON params
   need single quotes around the whole value or `--params @file.json`; the
   CLI help says so.

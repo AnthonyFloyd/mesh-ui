@@ -82,7 +82,7 @@ Approximate total: about 230 distinct eero API endpoints (method + path) across 
 | PUT | `{net}/password` | form `password` (8-63 printable ASCII) | - | W **D** | FF, LD | Change main Wi-Fi password: every client drops. |
 | DELETE | `{net}/password` | - | - | W **D** | FF | Clears password (open network). Dangerous. |
 | POST | `/2.2/util/generatepassword` | JSON `{}` | string or `{password}` | R | LD | Server-suggested password, changes nothing. |
-| PUT | `{net}/label?labelType=specialMarket` | form `label` | - | W | LD | Network nickname shown in apps (not SSID). Read from `nickname_label`. |
+| PUT | `{net}/label?labelType=specialMarket` | form `label` | - | W | LD, Eeronaut | Network nickname shown in apps (not SSID). Read from `nickname_label`. Eeronaut quotes eero's Android client for it and reads `nickname_label` back ([section 20](#20-real-captures-and-write-sources-for-m6-2026-11-14)). |
 | POST | `{net}/reboot` | empty-JSON | - | **D** | SX, FF, LD, MX, ES, EH, DC, ED | **Reboots every eero on the network.** |
 | GET | `{net}/permissions` | - | `{role: "network-owner"|"standard-admin"|..., permissions{<area>:{create,read,update,delete}, per_eero:[...]}}` | R | FF, LD | What the signed-in user may do. Real: areas only `network` and `eeros` plus dotted keys (section 19). Use to gate UI. |
 | GET | `{net}/members` | - | `{members:[{user_id, user_role: owner|admin|..., user_name, user_email?, user_tags}]}` | R | FF, LD | Real (2026-11-13): `{members: [{user_id: number, user_role, user_name, user_tags: string[]}]}`, no email. |
@@ -111,9 +111,9 @@ Most toggles are written through one endpoint, `PUT {net}/settings` (`resources.
 | PUT | `{net}/settings` | JSON `{wpa3: bool}` | W | SX, FF, LD | Read `wpa3`. Older devices may drop. |
 | PUT | `{net}/settings` | JSON `{sqm: bool}` | W | SX, FF, LD | "Optimize for conferencing and gaming" (Smart Queue Management). FF sends it as query `?sqm=true`; SX/LD as JSON. |
 | PUT | `{net}/settings` | JSON `{ipv6_upstream: bool}` (FF `set_ipv6` also sends `ipv6_downstream`) | W | SX, FF, LD | IPv6 toggle. |
-| PUT | `{net}/settings` | JSON `{ffs: bool}` | W | LD | Amazon Frustration-Free Setup. Unverified: eero's own app shows no switch for it (M5 review), and a real network sends `ffs` and capability `ffs` both true. |
+| PUT | `{net}/settings` | JSON `{ffs: bool}` | W | LD | Amazon Frustration-Free Setup. **Not used**: no live-tested client sends it (section 20) and eero's own app shows no switch, so Mesh UI has no write for it and shows the state read only (M6.10). |
 | PUT | `{net}/settings` | form `name` | W | FF | Rename SSID (FF live-verified). |
-| PUT | `{net}/settings` | JSON `{timezone: {value: "America/New_York"}}` | W | LD | Schedules follow network timezone. |
+| PUT | `{net}/settings` | JSON `{timezone: {value: "America/New_York"}}` | W | LD, Eeronaut | Schedules follow network timezone. A real network answered 200 and kept the old zone (M5.R-fix4); not sent since M6.9 ([section 20](#20-real-captures-and-write-sources-for-m6-2026-11-14)). |
 | PUT | `{net}/settings` | JSON `{dns: {mode: "automatic"|"custom", caching: bool, custom: {ips: [..up to 4, v4 or v6]}}}` and/or `{ipv6: {name_servers: {mode, custom: [...]}}}` | W **D** | FF, LD | Custom DNS. **Confirmed mesh reboot (FF).** Read from `dns{mode, caching, parent{ips}, custom{ips}}`, `ipv6.name_servers`. |
 | PUT | `{net}/dns` | JSON `{caching: bool}` | W **D** | SX | SX's DNS caching toggle (alternate path). FF uses `settings` `{dns:{caching}}`. |
 | PUT | `{net}/settings` | JSON `{connection: {mode: "nat"|"bridged"|"ipPassthrough"}, nat_port_randomization: bool, dhcp: {mode: "automatic"|"custom", custom: {subnet_ip, subnet_mask, start_ip, end_ip}}}` | W **D** | FF, LD | Bridge mode / LAN subnet / DHCP range. Bridge or passthrough disables profiles, routing, many Plus features. Mesh restart. |
@@ -447,6 +447,77 @@ computed shapes in-process; it was reverted before the first commit.
 | `{net}` capabilities (M5.R-fix4) | 200 | `capabilities.power_saving{capable: bool, requirements{has_supported_hardware, has_supported_firmware, is_country_capable_or_pre_release_network: bool, gateway_model, firmware, country_from_geo_ip: string}}`; `capabilities.scheduled_power_saving{capable: bool, requirements{has_supported_hardware, has_min_firmware_version: bool}}`; `timezone{value, geo_ip: string}`; `resources.settings`: string (same version as the network url); no `resources.power_saving`. On the maintainer's network both power saving capabilities are false with `has_supported_hardware` false; `{net}/power_saving/schedules` answered `{schedules: []}` (after the two schedules were deleted) | Eco efficiency `enable` is refused on `power_saving` false: the 403 was the hardware, not the role. The schedule 400 was the day form (above), not the capability: the network had schedules and the switch answered 200. The schedule item shape is still from the clients |
 | `/2.2/account` and `{net}/members` (M5.1-fix) | 200 | account `role`: string, value `none`; `log_id`: string, not equal to any member `user_id` (number); members 1, `user_role` `owner` | The role comes from `{net}/permissions`, not the account; members cannot be matched to the account by id |
 | `{eero}/connections` | 200 | `provide_device_power`: null; `node_actions`: []; `ports{layout{position_rank_order: number[], layout_type: string}, interfaces[]{interface_number: number, name, network_type, supported_speed, negotiated_speed, port_status, ethernet_address: string, actions[]{type: string, position: number}, capable_protocols: string[], disabled_protocols: [], connection_status[]{type: string, metadata{multiple_devices: object} or {advanced_attributes: object}}, is_upstream, is_sfp: bool, port_security{capable, enabled: bool, status, display_status: string}, providing_power, port_flap_info, sfp: null}}`; `wireless_devices[]{type, metadata{display_name, device_type, url}}` | `port_status` across every eero's ports: `DATA_CONNECTED` x3, `WAN` x1, `DISCONNECTED` x2, so a down port is `DISCONNECTED` (M5.7). Attachments sit in `connection_status[].metadata.multiple_devices` (M5.7) |
+
+## 20. Real captures and write sources for M6 (2026-11-14)
+
+**Captures: not taken (not signed in).** M6.1 was to capture, read-only
+and as key paths, types and counts only: `GET /2.2/account` (`consents`
+and `push_settings` keys, `email` and `phone` `verified`, `auth.type`,
+`can_transfer`, network count); the `network.list` role counts (owner,
+admin, null); the one approved `{net}/admins` role value; the types of
+`{net}` `nickname_label` and `timezone`; and `GET
+{net}/data_usage/report_settings` (status and key paths). The maintainer's
+config dir had no saved session (`auth.status` signed out, no
+`session.json`), so per AGENTS.md nothing was read and no sign-in was
+tried. What earlier captures already settle:
+
+| Item | Known from | Status |
+|---|---|---|
+| `/2.2/account` `role`, `log_id` | section 19 (`role` string `none`; `log_id` string) | known |
+| `/2.2/account` `consents`, `push_settings` keys, `verified` types, `auth.type`, `can_transfer`, network count | none | **open**: capture before M6.7 maps them |
+| Owner role value | section 19: `{net}/members` `user_role` `owner` (1 member), `{net}/permissions` `role` `network-owner` | known; the fake (`owner` members, `network-owner` permissions) already matches, so `test/fake-eero/routes/admins.ts` and the fixtures are unchanged |
+| Admin role value | none: the captured network has no admins | **open**; the fake's `admin` and `standard-admin` stay from the clients |
+| `network.list` role counts | none | **open** |
+| `{net}` `timezone` | sections 17 and 19: `timezone{value, geo_ip}`, both strings | known |
+| `{net}` `nickname_label` | none (the account's `networks.data[]` carries it per LD) | **open** |
+| `{net}/data_usage/report_settings` | none | **open**: M6.7 decides the weekly report toggle from it |
+
+`MANUAL:` line (M6.1 PR): sign in on the maintainer's machine, then an
+agent runs the captures above read-only and fills this table.
+
+**Write sources.** Rule from M5: a write is built only when a client that
+tested it live sends it (Eeronaut, or FF calls marked live-verified), or a
+read-only capture proves its shape. Checked on 2026-11-14 against Eeronaut
+(commit 0561711) and FF (`eero-api`, commit 54bb27f):
+
+| Write | Eeronaut | FF | Source |
+|---|---|---|---|
+| Account name (`PUT /2.2/account/name`) | not sent (no account writes) | sent; the module says every write is unverified | **none** |
+| Email and verify | not sent | sent; unverified | **none** |
+| Mobile and verify | not sent | sent; unverified | **none** |
+| Consents (`marketing_emails`) | not sent | sent; unverified | **none** |
+| Push settings | not sent | sent (JSON); "not confirmed against a live account" | **none** |
+| Account delete (`DELETE /2.2/account`) | not sent | not sent ("deliberately not exposed") | **none** |
+| Network nickname (`PUT {net}/label?labelType=specialMarket` form `label`) | sent, quoting eero's Android client (`@FormUrlEncoded @PUT("2.2/networks/{id}/label?labelType=specialMarket") @Field("label")`); reads `nickname_label` back and fails if it differs | not sent | **Eeronaut** |
+| Time zone | `PUT {net}/settings` JSON `{timezone: {value}}`, the same as ours, with the same read-back; no live-test note and no other request | not sent | **none** (no request known that eero applies) |
+| Frustration-Free Setup (`ffs`) | not sent; nearby: `PUT {net}/simple_setup/vendors/{vendor}` form `enabled` (live tested, vendor onboarding) and `PUT {net}/auto_setup_mode` | not sent | **none** |
+| Network transfer | no transfer request; notes that an `owner` invite role "transfers the network" but sends only `admin` | `POST {net}/invites` `{invite_role: "owner"}`, unverified; no `{net}/transfer` | **none** |
+
+So M6.7 has no source for any account write and keeps them out of the
+live eero backend (they answer "not available yet"; demo applies them);
+M6.9 may build the nickname from Eeronaut.
+
+**M6.7 (account writes).** No source turned up. `src/core/eero/backend/account.ts`
+builds the section 2 requests (FF and LD shapes: name, email, phone and
+consents as forms, the verifies as form `code`, push settings as JSON with
+both keys, `DELETE /2.2/account`) only when the backend talks to the local
+fake eero server, where `account.test.ts` checks each exact request. With
+the real API the area has `get` only. The `consents` read shape is also
+unverified: Mesh UI maps `consents.marketing_emails` only when it is a
+bool, else Stay up to date shows no value. To turn a write on for live, a
+capture or a live-tested client must confirm it first.
+
+**M6.9 (2026-11-14).** Rechecked Eeronaut at 0561711
+(`app/backend/eeronaut/api/config.py`): the nickname is `PUT
+{net}/label?labelType=specialMarket` form `label`, read back from
+`nickname_label`; Eeronaut requires 1 to 64 characters, so it never clears
+it. Mesh UI sends it (up to 32 characters, trimmed) and an empty `label` to
+clear, verified by the same read-back (MANUAL check). The time zone is
+still only `PUT {net}/settings` `{timezone: {value}}` with a read-back, the
+request a real network ignored, so the eero backend no longer sends it:
+`settings.timezone.set` answers "not available yet" there and the Wi-Fi
+page dims it. The fake server answers that request 200 and keeps the zone,
+as the real network did.
 
 ---
 

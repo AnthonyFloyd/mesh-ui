@@ -60,8 +60,27 @@ export interface AuthBackend {
   logout(): Promise<void>;
 }
 
+/** Account push alert switches; eero wants both keys on every write. */
+export type AccountPush = { networkOffline: boolean; nodeOffline: boolean };
+
+/**
+ * Account reads and writes. Writes answer once eero accepts them; core reads
+ * `get` again for the result. The eero backend answers "not available yet"
+ * until a live-tested source for each write is found (docs/eero-api/endpoints.md#20).
+ */
 export interface AccountBackend {
   get(): Promise<M.Account>;
+  setName(name: string): Promise<void>;
+  /** The new address stays unverified until `verifyEmail`. */
+  setEmail(email: string): Promise<void>;
+  verifyEmail(code: string): Promise<void>;
+  /** E.164. Sends a code; the number stays unverified until `verifyPhone`. */
+  setPhone(phone: string): Promise<void>;
+  verifyPhone(code: string): Promise<void>;
+  setConsents(marketingEmails: boolean): Promise<void>;
+  setPush(push: AccountPush): Promise<void>;
+  /** Deletes the account (`DELETE /2.2/account`). Cannot be undone; core signs out after. */
+  remove(): Promise<void>;
 }
 
 export interface NetworkBackend {
@@ -75,6 +94,8 @@ export interface NetworkBackend {
   restart(net: M.Id): Promise<void>;
   /** Deletes the network (`DELETE {net}`). Owner only; cannot be undone. */
   remove(net: M.Id): Promise<void>;
+  /** The network's nickname (`nickname_label`); null clears it. For M6.9. */
+  setNickname(net: M.Id, nickname: string | null): Promise<void>;
 }
 
 export type SpeedTestQuery = { from: M.Iso; to: M.Iso; limit: number };
@@ -339,7 +360,6 @@ export interface AdminsBackend {
 export interface IntegrationsBackend {
   get(net: M.Id): Promise<M.Integrations>;
   setBuiltin(net: M.Id, enabled: boolean): Promise<M.Integrations>;
-  setFfs(net: M.Id, enabled: boolean): Promise<M.Integrations>;
   /** Starts Zigbee discovery on the Smart Home Hub; pairing finishes in the Alexa app. */
   discoverZigbee(net: M.Id): Promise<void>;
   unlinkAmazon(net: M.Id): Promise<M.Integrations>;
@@ -393,7 +413,8 @@ export type AreaName = keyof BackendAreas;
  * it (see `EeroArea` and `partialArea`); the demo backend implements them all.
  */
 export const WRITE_METHODS = {
-  network: ["restart", "remove"],
+  account: ["setName", "setEmail", "verifyEmail", "setPhone", "verifyPhone", "setConsents", "setPush", "remove"],
+  network: ["restart", "remove", "setNickname"],
   internet: ["runSpeedTest"],
   eero: ["rename", "find", "setLed", "setNightlight", "restart", "portAction", "remove", "placementTest"],
   device: ["setPaused", "rename", "setType", "setProfile", "setBlocked"],
@@ -426,7 +447,7 @@ export const WRITE_METHODS = {
   ],
   diagnostics: ["run", "coverageScan", "upgradeReport"],
   admins: ["createInvite", "cancelInvite", "remove", "transfer"],
-  integrations: ["setBuiltin", "setFfs", "discoverZigbee", "unlinkAmazon"],
+  integrations: ["setBuiltin", "discoverZigbee", "unlinkAmazon"],
   notifications: ["markRead", "setSettings"],
 } as const satisfies { [K in AreaName]?: readonly (keyof BackendAreas[K])[] };
 

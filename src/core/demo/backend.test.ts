@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BackendError, partialArea, type UsageQuery, WRITE_METHODS } from "../backend";
 import { createEeroBackend } from "../eero/backend";
 import { DEVICE_TYPE_IDS, deviceCategory } from "../eero/map/device";
+import { RateLimiter } from "../eero/ratelimit";
 import { createEngine } from "../engine";
 import type * as M from "../model";
 import { createDemoBackend, type DemoBackend, dayStart, EVENT_PAGE_SIZE, FLAKY_DEVICE, isDemoBackend, RESTART_MS } from "./backend";
@@ -907,7 +908,9 @@ describe("write contracts (M4)", () => {
     const secrets = { load: async () => "t", save: async () => "memory" as const, clear: async () => {}, storage: async () => "memory" as const };
     let calls = 0;
     // 400, not 500: a built write may read first (guest.rename), and reads retry a 500 with backoff.
-    const eero = createEeroBackend({ secrets, origin: "http://127.0.0.1", fetch: (async () => (calls++, new Response("{}", { status: 400 }))) as typeof fetch });
+    // A roomy limiter: built writes now pass the default 80 a minute between them (M6.7).
+    const limiter = new RateLimiter({ perWindow: 10_000 });
+    const eero = createEeroBackend({ secrets, origin: "http://127.0.0.1", limiter, fetch: (async () => (calls++, new Response("{}", { status: 400 }))) as typeof fetch });
     for (const [area, methods] of Object.entries(WRITE_METHODS)) {
       for (const m of methods) {
         const fn = (eero as unknown as Record<string, Record<string, (...a: unknown[]) => Promise<unknown>>>)[area]?.[m];
@@ -1070,7 +1073,8 @@ describe("writes (M5)", () => {
     const run = await b.diagnostics.run(MAPLE, { symptom: "internet_slow", deviceId: null });
     expect(run.status).toBe("completed");
     expect(await b.diagnostics.latest(MAPLE)).toEqual(run);
-    expect((await b.integrations.setFfs(MAPLE, false)).ffs.enabled).toBe(false);
+    // Frustration-Free Setup is read only.
+    expect((await b.integrations.get(MAPLE)).ffs).toMatchObject({ available: true, enabled: true });
     expect((await b.integrations.setBuiltin(MAPLE, false)).builtin.enabled).toBe(false);
     expect((await b.integrations.unlinkAmazon(MAPLE)).amazon.enabled).toBe(false);
     await b.integrations.discoverZigbee(MAPLE);
@@ -1096,7 +1100,7 @@ describe("writes (M5)", () => {
     await b.routing.addPinhole(MAPLE, { deviceId: (await b.device.list(MAPLE))[0]!.id, protocol: "tcp", port: "22" });
     await b.updates.setPreferredHour(MAPLE, 5);
     await b.admins.createInvite(MAPLE, { nickname: null, email: null });
-    await b.integrations.setFfs(MAPLE, false);
+    await b.integrations.setBuiltin(MAPLE, false);
     await b.notifications.setSettings(MAPLE, { "device.new": false });
     await b.eero.remove(MAPLE, before.eeros.find((e) => !e.isGateway)!.id);
     await b.network.remove(LAKE);
@@ -1109,5 +1113,55 @@ describe("writes (M5)", () => {
     expect(await b.notifications.settings(MAPLE)).toEqual(before.notif);
     expect((await b.eero.list(MAPLE)).map((e) => e.id)).toEqual(before.eeros.map((e) => e.id));
     expect((await b.network.list()).map((n) => n.id)).toContain(LAKE);
+  });
+});
+
+describe("account and network nickname writes", () => {
+  it("each account write shows in the next read", async () => {
+    const b = demo();
+    await b.account.setName("Sam Lee");
+    expect((await b.account.get()).name).toBe("Sam Lee");
+    await b.account.setEmail("sam@example.com");
+    expect((await b.account.get()).email).toEqual({ value: "sam@example.com", verified: false });
+    await b.account.verifyEmail("123456");
+    expect((await b.account.get()).email).toEqual({ value: "sam@example.com", verified: true });
+    await b.account.setPhone("+15550100199");
+    expect((await b.account.get()).phone).toEqual({ value: "+15550100199", verified: false });
+    await expect(b.account.verifyPhone("111111")).rejects.toMatchObject({ code: "eero_error" });
+    await b.account.verifyPhone("123456");
+    expect((await b.account.get()).phone?.verified).toBe(true);
+    await expect(b.account.verifyPhone("123456")).rejects.toMatchObject({ code: "eero_error" });
+    await b.account.setConsents(true);
+    expect((await b.account.get()).marketingEmails).toBe(true);
+    await b.account.setPush({ networkOffline: false, nodeOffline: true });
+    expect((await b.account.get()).push).toEqual({ networkOffline: false, nodeOffline: true });
+  });
+
+  it("the nickname shows in the network list and clears with null", async () => {
+    const b = demo();
+    await b.network.setNickname(MAPLE, "Home");
+    expect((await b.network.list()).find((n) => n.id === MAPLE)?.nickname).toBe("Home");
+    await b.network.setNickname(MAPLE, null);
+    expect((await b.network.list()).find((n) => n.id === MAPLE)?.nickname).toBeNull();
+    await expect(b.network.setNickname("nope", "x")).rejects.toBeInstanceOf(BackendError);
+  });
+
+  it("delete signs out, and every scenario brings the account back as it was", async () => {
+    const b = demo();
+    const before = await b.account.get();
+    await b.account.setName("Sam Lee");
+    await b.network.setNickname(MAPLE, "Home");
+    await b.account.remove();
+    await expect(b.account.get()).rejects.toMatchObject({ code: "not_signed_in" });
+    b.setScenario("default");
+    expect(await b.account.get()).toEqual(before);
+    expect((await b.network.list()).find((n) => n.id === MAPLE)?.nickname).toBeNull();
+    for (const name of SCENARIO_NAMES) {
+      await b.account.setConsents(true);
+      b.setScenario(name);
+      const account = await b.account.get().catch(() => null);
+      if (account) expect(account.marketingEmails, name).toBe(false);
+      b.setScenario("default");
+    }
   });
 });
