@@ -1,9 +1,20 @@
 # Mesh UI
 
-A desktop app for managing [eero](https://eero.com) mesh networks on macOS,
-Windows and Linux, with a command line and an MCP server for scripts and AI
-agents. Built with Electron, React, and Tailwind, with a look and theme
-system borrowed from [T3 Code](https://github.com/pingdotgg/t3code).
+Manage your [eero](https://eero.com) mesh network from your desktop. Mesh UI
+shows what the eero mobile app shows (your eeros, connected devices, data
+usage, speed tests, profiles, guest Wi-Fi and network settings) in a
+proper window with room to see it all, plus a command line and an MCP
+server so scripts and AI agents can do the same.
+
+![Mesh UI Overview page, showing a demo network](website/public/img/overview.jpg)
+
+- **Get it:** [meshui.pkarma.com](https://meshui.pkarma.com) or the
+  [latest release](https://github.com/pkkid/mesh-ui/releases/latest).
+- **Runs on:** macOS (Apple silicon and Intel), Windows (x64 and arm64)
+  and Linux (x64 and arm64: AppImage, deb, rpm).
+- **Works with:** any eero network on a free eero account. eero Plus
+  features are not supported.
+- **Try it first:** demo mode runs on invented networks, no account needed.
 
 > Mesh UI is an independent app and is not made by eero or Amazon. It talks
 > to eero's unofficial cloud API (the one the mobile app uses) and is not
@@ -21,7 +32,7 @@ system borrowed from [T3 Code](https://github.com/pingdotgg/t3code).
 - Everything the window does is also a command for the `mesh-ui` CLI and
   its MCP server.
 - Light, dark, and system appearance, plus the Default, Grove, Ocean, Ember,
-  Iris, and Gruvbox Hard palettes from T3 Code.
+  Iris, and Gruvbox Hard palettes.
 - Free eero accounts only: nothing behind eero Plus.
 
 ## Install
@@ -198,8 +209,3 @@ careful with it on every platform:
 
 App & account shows whether your session is saved in the keychain or held
 in memory.
-
-## Credits
-
-Theme palettes and UI primitives are adapted from T3 Code, MIT License,
-Copyright (c) 2026 T3 Tools Inc.
